@@ -97,7 +97,7 @@ protected:
 
 	typedef itk::LaplacianSharpeningImageFilter<ProbImageType, ProbImageType >  LaplacianSharpeningImageFilterType;
 	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ProbImageType, ProbImageType > GradientFilterType;
-	typedef itk::CovariantVector<float, Dim> GradientType;
+	typedef itk::Vector<float, Dim> GradientType;
 	typedef itk::Image<GradientType, Dim>   GradientImageType;
 	typedef itk::ImageFileWriter< GradientImageType>  VectorImageWriterType;
 	typedef itk::GradientImageFilter<ProbImageType, float, float> GradientIFilterType;
@@ -151,9 +151,11 @@ public:
 
 	/// return labeled image for somas
 	SegmentedImageType::Pointer SegmentSoma( std::vector< itk::Index<3> > &somaCentroids, ProbImageType::Pointer binImagePtr);
-	SegmentedImageType::Pointer SegmentSomaUsingGradient( ProbImageType::Pointer input, SegmentedImageType::Pointer initialContour, std::vector< itk::Index<3> > &somaCentroids);
+	SegmentedImageType::Pointer GeodesicActiveContour( ProbImageType::Pointer input, std::vector< itk::Index<3> > &somaCentroids);																	  
 	SegmentedImageType::Pointer SegmentHeart(const char *imageName, const char *fileName, ProbImageType::Pointer inputImage, vnl_vector<int> &seperator, vnl_vector<double> &curvature);
-
+	SegmentedImageType::Pointer SegmentHeartSeperate( ProbImageType::Pointer inputImage, vnl_vector<int> &seperator,  std::vector< itk::Index<3> > &seedVector1, 
+	std::vector< itk::Index<3> > &seedVector2, const char *params1, std::vector< itk::Index<3> > &seedBackground, const char *params2);
+	
 	ProbImageType::Pointer OtsuThresholdImage(OutputImageType::Pointer image);
 	void writeImage(const char* writeFileName, SegmentedImageType::Pointer image);
 	void writeImage(const char* writeFileName, OutputImageType::Pointer image);
@@ -184,6 +186,8 @@ public:
 	void GetSeedpointsInRegion(std::vector< itk::Index<3> > &seedVec, std::vector< itk::Index<3> > &seedInRegion, int startX, int startY, int width, int height);
 	void CaculateMeanStd(std::string fileName, ProbImageType::Pointer image);
 	ProbImageType::Pointer diffusionsmoothing(ProbImageType::Pointer image);
+	void SegmentHeartSeperate( OutputImageType::Pointer inputImage, const char *imageName, vnl_vector<int> &seperator);
+	void SegmentHeartMerge( OutputImageType::Pointer inputImage, const char *imageName, int nseries);
 
 protected:
 	template <class T> bool SetParamValue(std::map<std::string,std::string> &opts, std::string str, T &value, T defVal);
@@ -196,6 +200,7 @@ protected:
 	void ShrinkPixel(ProbImageType2D::Pointer image, int border);
 	ProbImageType2D::Pointer ExtractSlice(ProbImageType::Pointer image, int sliceId);
 	ProbImageType::Pointer RemoveImageBorderByPixel(ProbImageType::Pointer image, int border);
+	GradientImageType::Pointer CalculateAdvectionImage(ProbImageType::Pointer edgePotentialMap);
 
 private:
 	//ProbImageType::Pointer inputImage;
@@ -206,14 +211,17 @@ private:
 	// speed image
 	double alfa;
 	double beta;
+	double intensityThreshold;
 	double open_radius;
 	double fill_radius;
+	double m_DerivativeSigma;
 	// for initial contour
 	int timethreshold; 
 	double seedValue;
 	// active contour
 	double curvatureScaling; 
 	double advectScaling;
+	double propScaling;
 	double rmsThres;
 	int maxIterations;
 	int holeSize;

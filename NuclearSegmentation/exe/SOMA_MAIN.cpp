@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
-	if( argc < 2  || atoi(argv[1]) < 0 || atoi(argv[1]) > 6)
+	if( argc < 2  || atoi(argv[1]) < 0 || atoi(argv[1]) > 8)
 	{
 		std::cout<<"Debris: SomaExtraction <0> <IntensityImage> <DebrisImage> <SomaSeeds.txt>"<<std::endl;
 		//std::cout<<"Derbis: SomaExtraction <InputImageFileName> <Centroids.txt> <DiceWidth (typically 100)> <hole filling (typically 10)>\n";
@@ -72,32 +72,22 @@ int main(int argc, char* argv[])
 	else if( atoi(argv[1]) == 1) /// soma segmentation with initial contours
 	{
 		Somas->LoadOptions( argv[4]); // Load params
-		
 		std::cout << "Set input image" << std::endl;
-		//SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImageByPortion(argv[1]); // Load microglia image by portion
-		SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImage(argv[2]); // Load microglia image 16bit
+		SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImage8bit(argv[2]); 
 
 		std::string InputFilename = std::string(argv[2]);
 		std::string somaImageName = InputFilename;
 		somaImageName.erase(somaImageName.length()-4,somaImageName.length());
-		somaImageName.append("_soma.mhd");
-		std::string somaCentroidName = InputFilename;
-		somaCentroidName.erase(somaCentroidName.length()-4,somaCentroidName.length());
-		somaCentroidName.append("_centroids.txt");
-		std::string somaFeatureName = InputFilename;
-		somaFeatureName.erase(somaFeatureName.length()-4,somaFeatureName.length());
-		somaFeatureName.append("_soma_features.txt");
+		somaImageName.append("_seg.mhd");
 
-		std::cout << "Set initial contour" << std::endl;
-		SomaExtractor::SegmentedImageType::Pointer initialContourImage = Somas->SetInitalContourImage(argv[3]); // Load labeled nucleus image
-		
+		std::vector< itk::Index<3> > seedVector;
+		Somas->ReadSeedpoints( argv[3], seedVector, true);
+
 		clock_t SomaExtraction_start_time = clock();
 		
 		std::cout<< "Segmenting..."<<std::endl;
-
-		std::vector< itk::Index<3> > seedVector;
 		/// SegmentSoma2: GVF Active Contour
-		SomaExtractor::SegmentedImageType::Pointer segImage = Somas->SegmentSomaUsingGradient(image, initialContourImage, seedVector);
+		SomaExtractor::SegmentedImageType::Pointer segImage = Somas->GeodesicActiveContour(image, seedVector);
 		std::cout << "Total time for SomaExtraction is: " << (clock() - SomaExtraction_start_time) / (float) CLOCKS_PER_SEC << std::endl;
 
 		/// Compute soma features and write new seeds back
@@ -105,11 +95,6 @@ int main(int argc, char* argv[])
 		{
 			std::cout<< "Writing "<< somaImageName<<std::endl;
 			Somas->writeImage(somaImageName.c_str(), segImage);
-			std::cout<< "Writing "<< somaCentroidName<<std::endl;
-			Somas->writeCentroids( somaCentroidName.c_str() ,seedVector);
-			vtkSmartPointer<vtkTable> table = Somas->ComputeSomaFeatures(segImage);
-			std::cout<< "Writing "<< somaFeatureName<<std::endl;
-			ftk::SaveTable(somaFeatureName.c_str(), table);
 		}
 	}
 	else if( atoi(argv[1]) == 2)  /// soma segmentation without initial seeds
@@ -223,56 +208,44 @@ int main(int argc, char* argv[])
 			ftk::SaveTableAppend("features.txt", table, id);
 		}
 	}
-	//else if( atoi(argv[1]) == 5 && argc == 5)  /// normalize by the input background
-	//{
-	//	std::string InputFilename = std::string(argv[2]);
-	//	SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImage(InputFilename.c_str()); 
-	//	SomaExtractor::ProbImageType2D::Pointer backgroundImage = Somas->SetInputImageFloat2D(argv[3]);
-	//	SomaExtractor::UShortImageType::Pointer rescaledImage = Somas->DevideAndScaleToOriginalMean(image, backgroundImage, atoi(argv[4]));
-	//	
-	//	std::string imageName = InputFilename;
-	//	imageName.erase(imageName.length()-4,imageName.length());
-	//	imageName.append("_normalize.tif");
-	//	Somas->writeImage(imageName.c_str(), rescaledImage);
-	//}
-	//else if( atoi(argv[1]) == 6 && argc == 5)  /// normalize the intensity: get background image
-	//{
-	//	std::string InputFilename = std::string(argv[2]);
-	//	//SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImage(argv[2]); 
-	//	//SomaExtractor::ProbImageType2D::Pointer backgroundImage = Somas->GetBackgroundImage(image, atof(argv[3]));
-	//	SomaExtractor::ProbImageType2D::Pointer backModel = Somas->SetInputImage2D(argv[2]);
-	//	SomaExtractor::ProbImageType2D::Pointer backimage = Somas->SetInputImage2D(argv[3]);
+	else if( atoi( argv[1]) == 6)   // seperate image stack
+	{
+		SomaExtractor::ProbImageType::Pointer image = Somas->SetInputImage8bit(argv[2]); 
+		vnl_vector<int> seperator(2);
+		seperator[0] = 19;
+		seperator[1] = 50;
+		std::vector< itk::Index<3> > seedVector1;
+		Somas->ReadSeedpoints( argv[3], seedVector1, true);
+		std::vector< itk::Index<3> > seedVector2;
+		Somas->ReadSeedpoints( argv[4], seedVector2, true);
+		std::vector< itk::Index<3> > seedVectorBackground;
+		Somas->ReadSeedpoints( argv[6], seedVectorBackground, true);
 
-	//	//std::string imageName = InputFilename;
-	//	//imageName.erase(imageName.length()-4,imageName.length());
-	//	//imageName.append("_background.nrrd");
-	//	//Somas->WriteFloat2DImage(imageName.c_str(), backgroundImage);
+		SomaExtractor::SegmentedImageType::Pointer segImage = Somas->SegmentHeartSeperate(image, seperator, seedVector1, seedVector2, argv[5], seedVectorBackground, argv[7]);  
+		std::cout<< "Seperation Done."<<std::endl;
+		
+		if( segImage)
+		{
+			std::string InputFilename = std::string(argv[2]);
+			std::string somaImageName = InputFilename;
+			somaImageName.erase(somaImageName.length()-19,somaImageName.length());
+			somaImageName.append("_seg.mhd");
+			std::cout<< "Writing "<< somaImageName<<std::endl;
+			Somas->writeImage(somaImageName.c_str(), segImage);
 
-	//	//std::cout<<"Read background image"<<std::endl;
-	//	//
-	//	//std::cout<<"NormalizeUsingBackgroundImage"<<std::endl;
-	//	Somas->NormalizeUsingBackgroundImage(backModel, backimage, atof(argv[4]));
-	//	/*std::string imageName = InputFilename;
-	//	imageName.erase(imageName.length()-4,imageName.length());
-	//	imageName.append("_normalize.tif");
-	//	SomaExtractor::UShortImageType::Pointer normalizedImage = Somas->NormalizeUsingBackgroundImage(image, backgroundImage);
-	//	Somas->writeImage(imageName.c_str(), normalizedImage);*/
-	//}
-	//else if( atoi(argv[1]) == 7 && argc == 7)   // get seed coordinates 
-	//{
-	//	std::vector< itk::Index<3> > seedVector;
-	//	Somas->ReadSeedpoints(argv[2], seedVector, false);
-	//	std::cout<< "Original Seed Size: "<<seedVector.size()<<std::endl;
-
-	//	std::string InputFilename = std::string(argv[2]);
-	//	std::string outputFilename = InputFilename;
-	//	outputFilename.erase(outputFilename.length()-4,outputFilename.length());
-	//	outputFilename.append("_crop.txt");
-	//	std::vector< itk::Index<3> > seedInRegion;
-	//	Somas->GetSeedpointsInRegion(seedVector, seedInRegion, atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]));  
-	//	std::cout<< "Seed Size in region: "<<seedInRegion.size()<<std::endl;
-	//	Somas->writeCentroids(outputFilename.c_str(), seedInRegion);
-	//}
+			InputFilename.erase(InputFilename.length()-19,InputFilename.length());
+			InputFilename.erase(InputFilename.begin());
+			int id = atoi(InputFilename.c_str());
+			vtkSmartPointer<vtkTable> table = Somas->ComputeHeartFeatures(segImage);
+			ftk::SaveTableAppend("features.txt", table, id);
+		}
+	}
+	else if( atoi( argv[1]) == 7)    //merge segmentation result
+	{
+		SomaExtractor::OutputImageType::Pointer inputImage = Somas->Read8BitImage(argv[2]);
+		Somas->SegmentHeartMerge(inputImage, argv[3],atoi(argv[4]));
+		std::cout<< "Merge Done."<<std::endl;
+	}
 
 	delete Somas;
 	return 0;

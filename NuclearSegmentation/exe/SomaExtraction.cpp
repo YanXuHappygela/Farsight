@@ -371,13 +371,15 @@ void SomaExtractor::LoadOptions(const char* paramFileName)
 	fin.close();
 
 	SetParamValue<double>(opts, "-sigmoid_alfa", alfa, -2);
-	SetParamValue<double>(opts, "-sigmoid_beta", beta, 70);
+	SetParamValue<double>(opts, "-sigmoid_beta", beta, 10);
+	SetParamValue<double>(opts, "-intensity_threshold", intensityThreshold,80);
 	SetParamValue<double>(opts, "-open_radius", open_radius, 2);
 	SetParamValue<double>(opts, "-fill_radius", fill_radius, 2);
 	SetParamValue<int>(opts, "-time_threhold", timethreshold, 5);
 	SetParamValue<double>(opts, "-seed_value", seedValue, -3);
-	SetParamValue<double>(opts, "-curvature_scaling", curvatureScaling, 0.5);
-	SetParamValue<double>(opts, "-advection_scaling", advectScaling, 0.5);
+	SetParamValue<double>(opts, "-curvature_scaling", curvatureScaling, 1);
+	SetParamValue<double>(opts, "-advection_scaling", advectScaling, 1);
+	SetParamValue<double>(opts, "-propagation_scaling", propScaling, 2);
 	SetParamValue<double>(opts, "-rmsThreshold", rmsThres, 0.02);
 	SetParamValue<int>(opts, "-max_iterations", maxIterations, 800);
 	SetParamValue<int>(opts, "-hole_size", holeSize, 10);
@@ -1040,6 +1042,249 @@ SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentHeart( const ch
 	return somas;
 }
 
+void SomaExtractor::SegmentHeartSeperate( OutputImageType::Pointer inputImage, const char *imageName, vnl_vector<int> &seperator)
+{
+	OutputImageType::PixelType * inputBuffer = inputImage->GetBufferPointer();
+	for(unsigned int i = 0; i < seperator.size(); i++)
+	{
+		OutputImageType::Pointer sepStack = OutputImageType::New();
+		OutputImageType::SizeType size;
+		size[0] = inputImage->GetLargestPossibleRegion().GetSize()[0];
+		size[1] = inputImage->GetLargestPossibleRegion().GetSize()[1];
+		int sliceIndex = 0;
+		if( i == 0)
+		{
+			size[2] = seperator[0] + 2;
+		}
+		else
+		{
+			sliceIndex = seperator[i-1];
+			size[2] = seperator[i] - seperator[i-1] + 2;
+		}
+		OutputImageType::IndexType start;
+		start.Fill(0);
+		OutputImageType::RegionType region;
+		region.SetIndex( start);
+		region.SetSize( size);
+
+		sepStack->SetLargestPossibleRegion( region);
+		sepStack->SetBufferedRegion( region);
+		sepStack->SetRequestedRegion( region);
+		sepStack->Allocate();
+		sepStack->FillBuffer(0);
+		OutputImageType::PixelType * sepBuffer = sepStack->GetBufferPointer();
+
+		for( int kk = 0; kk < size[2]; ++kk)
+		{
+			for( int jj = 0; jj< size[1]; ++jj)
+			{
+				for( int ii = 0; ii < size[0]; ++ii)
+				{
+					itk::Index<1> offset;
+					itk::Index<1> offset2;
+					offset[0] = (sliceIndex + kk) * size[0] * size[1] + jj * size[0] + ii;
+					offset2[0] = kk * size[0] * size[1] + jj * size[0] + ii;
+					sepBuffer[offset2[0]] = inputBuffer[offset[0]];
+				}
+			}
+		}
+
+		std::stringstream ss;
+		ss << i;
+		std::string outputName = std::string(imageName);
+		outputName.erase(outputName.length()-4,outputName.length());
+		outputName += ss.str();
+		outputName.append(".tif");
+		writeImage(outputName.c_str(), sepStack);
+	}
+}
+
+SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentHeartSeperate( ProbImageType::Pointer inputImage, vnl_vector<int> &seperator,  std::vector< itk::Index<3> > &seedVector1, 
+std::vector< itk::Index<3> > &seedVector2, const char *params1, std::vector< itk::Index<3> > &seedBackground, const char *params2)
+{
+	ProbImageType::PixelType * inputImageBuffer = inputImage->GetBufferPointer();
+	SegmentedImageType::Pointer segImage = SegmentedImageType::New();
+	segImage->SetLargestPossibleRegion( inputImage->GetLargestPossibleRegion());
+	segImage->SetBufferedRegion( inputImage->GetLargestPossibleRegion());
+	segImage->SetRequestedRegion( inputImage->GetLargestPossibleRegion());
+	segImage->Allocate();
+	segImage->FillBuffer(0);
+	SegmentedImageType::PixelType * segBuffer = segImage->GetBufferPointer();
+	
+	for(unsigned int i = 0; i < seperator.size(); i++)
+	{
+		std::cout<< "Seperate stack"<<std::endl;
+		ProbImageType::Pointer sepStack = ProbImageType::New();
+		ProbImageType::SizeType size;
+		size[0] = inputImage->GetLargestPossibleRegion().GetSize()[0];
+		size[1] = inputImage->GetLargestPossibleRegion().GetSize()[1];
+		int sliceIndex = 0;
+		if( i == 0)
+		{
+			size[2] = seperator[0] + 2;
+		}
+		else
+		{
+			sliceIndex = seperator[i-1];
+			size[2] = seperator[i] - seperator[i-1] + 2;
+		}
+		ProbImageType::IndexType start;
+		start.Fill(0);
+		ProbImageType::RegionType region;
+		region.SetIndex( start);
+		region.SetSize( size);
+
+		sepStack->SetLargestPossibleRegion( region);
+		sepStack->SetBufferedRegion( region);
+		sepStack->SetRequestedRegion( region);
+		sepStack->Allocate();
+		sepStack->FillBuffer(0);
+		ProbImageType::PixelType * sepBuffer = sepStack->GetBufferPointer();
+
+		for( int kk = 0; kk < size[2]; ++kk)
+		{
+			for( int jj = 0; jj< size[1]; ++jj)
+			{
+				for( int ii = 0; ii < size[0]; ++ii)
+				{
+					itk::Index<1> offset;
+					itk::Index<1> offset2;
+					offset[0] = (sliceIndex + kk) * size[0] * size[1] + jj * size[0] + ii;
+					offset2[0] = kk * size[0] * size[1] + jj * size[0] + ii;
+					sepBuffer[offset2[0]] = inputImageBuffer[offset[0]];
+				}
+			}
+		}
+		
+		if( i == 0)
+		{
+			LoadOptions(params1);
+			std::cout<< "Segment stack 1."<<std::endl;
+			SegmentedImageType::Pointer segImage = GeodesicActiveContour(sepStack, seedVector1);
+			SegmentedImageType::PixelType *segContourBuffer = segImage->GetBufferPointer();
+			SegmentedImageType::SizeType segSize = segImage->GetLargestPossibleRegion().GetSize();
+
+			for( int kk = 1; kk < segSize[2] - 1; ++kk)
+			{
+				for( int jj=0; jj < segSize[1]; ++jj)
+				{
+					for( int ii = 0; ii < segSize[0]; ++ii)
+					{
+						itk::Index<1> offset;
+						itk::Index<1> offset2;
+						offset[0] = kk * segSize[0] * segSize[1] + jj * segSize[0] + ii;
+						offset2[0] = (sliceIndex + kk) * segSize[0] * segSize[1] + jj * segSize[0] + ii;
+						segBuffer[offset2[0]] = (SegmentedImageType::PixelType)segContourBuffer[offset[0]];
+					}
+				}
+			}
+		}
+		else
+		{
+			ProbImageType::SizeType inputSize = sepStack->GetLargestPossibleRegion().GetSize();
+			std::cout<< "Segment outside region."<<std::endl;
+			LoadOptions(params2);
+			SegmentedImageType::Pointer backGroundImage = GeodesicActiveContour(sepStack, seedBackground);
+			SegmentedImageType::PixelType *backImagePtr = backGroundImage->GetBufferPointer();
+			ProbImageType::Pointer newImage = ProbImageType::New();
+			newImage->SetLargestPossibleRegion( sepStack->GetLargestPossibleRegion());
+			newImage->SetBufferedRegion( sepStack->GetLargestPossibleRegion());
+			newImage->SetRequestedRegion( sepStack->GetLargestPossibleRegion());
+			newImage->Allocate();
+			newImage->FillBuffer(0);
+			ProbImageType::PixelType * newImageBuffer = newImage->GetBufferPointer();
+			
+			for( int kk = 0; kk < inputSize[2]; ++kk)
+			{
+				for( int jj = 0; jj< inputSize[1]; ++jj)
+				{
+					for( int ii = 0; ii < inputSize[0]; ++ii)
+					{
+						itk::Index<1> offset;
+						offset[0] = kk * inputSize[0] * inputSize[1] + jj * inputSize[0] + ii;
+						if(backImagePtr[offset[0]] > 0)
+						{
+							newImageBuffer[offset[0]] = 255;
+						}
+						else
+						{
+							newImageBuffer[offset[0]] = sepBuffer[offset[0]];
+						}
+					}
+				}
+			}
+
+			LoadOptions(params1);
+			std::cout<< "Segment stack 2."<<std::endl;
+			SegmentedImageType::Pointer segImage = GeodesicActiveContour(newImage, seedVector2);
+			SegmentedImageType::PixelType *segContourBuffer = segImage->GetBufferPointer();
+			SegmentedImageType::SizeType segSize = segImage->GetLargestPossibleRegion().GetSize();
+			for( int kk = 1; kk < segSize[2] - 1; ++kk)
+			{
+				for( int jj=0; jj < segSize[1]; ++jj)
+				{
+					for( int ii = 0; ii < segSize[0]; ++ii)
+					{
+						itk::Index<1> offset;
+						itk::Index<1> offset2;
+						offset[0] = kk * segSize[0] * segSize[1] + jj * segSize[0] + ii;
+						offset2[0] = (sliceIndex + kk) * segSize[0] * segSize[1] + jj * segSize[0] + ii;
+						segBuffer[offset2[0]] = (SegmentedImageType::PixelType)segContourBuffer[offset[0]];
+					}
+				}
+			}
+		}
+	}
+	return segImage;
+}
+
+void SomaExtractor::SegmentHeartMerge( OutputImageType::Pointer inputImage, const char *imageName, int nseries)
+{
+	SegmentedImageType::Pointer segImage = SegmentedImageType::New();
+	segImage->SetLargestPossibleRegion( inputImage->GetLargestPossibleRegion());
+	segImage->SetBufferedRegion( inputImage->GetLargestPossibleRegion());
+	segImage->SetRequestedRegion( inputImage->GetLargestPossibleRegion());
+	segImage->Allocate();
+	segImage->FillBuffer(0);
+	SegmentedImageType::PixelType * segBuffer = segImage->GetBufferPointer();
+
+	int sliceIndex = 0;
+	for(unsigned int i = 0; i < nseries; i++)
+	{
+		std::stringstream ss;
+		ss << i;
+		std::string inputName = std::string(imageName);
+		inputName += ss.str();
+		inputName.append("_seg.mhd");
+		std::cout<< inputName<<std::endl;
+		somaImageReader::Pointer somaReader = somaImageReader::New();
+		somaReader->SetFileName(inputName);	
+		somaReader->Update();
+		SegmentedImageType::Pointer inImage = somaReader->GetOutput();
+		SegmentedImageType::PixelType *segContourBuffer = inImage->GetBufferPointer();
+		SegmentedImageType::SizeType size = inImage->GetLargestPossibleRegion().GetSize();
+
+		for( int kk = 1; kk < size[2] - 1; ++kk)
+		{
+			for( int jj=0; jj < size[1]; ++jj)
+			{
+				for( int ii = 0; ii < size[0]; ++ii)
+				{
+					itk::Index<1> offset;
+					itk::Index<1> offset2;
+					offset[0] = kk * size[0] * size[1] + jj * size[0] + ii;
+					offset2[0] = (sliceIndex + kk) * size[0] * size[1] + jj * size[0] + ii;
+					segBuffer[offset2[0]] = (SegmentedImageType::PixelType)segContourBuffer[offset[0]];
+				}
+			}
+		}
+		sliceIndex +=  size[2] - 2;
+	}
+	std::string outputName = std::string(imageName);
+	outputName.append("_seg.mhd");
+	writeImage(outputName.c_str(),segImage);
+}
+
 /// Generate Expanded Inital Contours within the boundary of labeled object by Daniel Distance Map
 SomaExtractor::ProbImageType::Pointer SomaExtractor::GetInitalContourByDistanceMap(SegmentedImageType::Pointer labelImage, double outlierExpand)
 {
@@ -1173,7 +1418,9 @@ void SomaExtractor::CheckBoundary(SegmentedImageType::IndexType &start, Segmente
 	end[2] = end[2] < SZ ? end[2] : SZ;
 }
 
-// GVF Active Contour with advection field and curvature constraint:
+
+
+// GeodesicActiveContour Active Contour with advection field and curvature constraint:
 // edge image:
 // double sigma
 // GVF:
@@ -1185,7 +1432,7 @@ void SomaExtractor::CheckBoundary(SegmentedImageType::IndexType &start, Segmente
 // double advectScaling
 // double rmsThres;
 // int minObjSize;
-SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentSomaUsingGradient( ProbImageType::Pointer input, SegmentedImageType::Pointer initialContour, std::vector< itk::Index<3> > &somaCentroids) 																	  
+SomaExtractor::SegmentedImageType::Pointer SomaExtractor::GeodesicActiveContour( ProbImageType::Pointer input, std::vector< itk::Index<3> > &somaCentroids) 																	  
 {
 	int SM = input->GetLargestPossibleRegion().GetSize()[0];
 	int SN = input->GetLargestPossibleRegion().GetSize()[1];
@@ -1213,23 +1460,43 @@ SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentSomaUsingGradie
 	fastMarching->SetStoppingValue(  timethreshold);
 	fastMarching->SetSpeedConstant( 1.0 );
 
-	typedef itk::CurvatureAnisotropicDiffusionImageFilter<ProbImageType, ProbImageType> SmoothingFilterType;
+	//typedef itk::CurvatureAnisotropicDiffusionImageFilter<ProbImageType, ProbImageType> SmoothingFilterType;
 	typedef itk::GradientMagnitudeRecursiveGaussianImageFilter<ProbImageType, ProbImageType>  GradientFilterType;
 	typedef itk::SigmoidImageFilter<ProbImageType, ProbImageType> SigmoidFilterType;
 
-	SmoothingFilterType::Pointer smoothing = SmoothingFilterType::New();
-	smoothing->SetInput(input);
-	smoothing->SetTimeStep( 0.0625);
-	smoothing->SetNumberOfIterations( smoothIteration);
-	smoothing->SetConductanceParameter( conductance);
-	smoothing->Update();
-	writeImage("smooth.nrrd", smoothing->GetOutput());
+	//SmoothingFilterType::Pointer smoothing = SmoothingFilterType::New();
+	//smoothing->SetInput(input);
+	//smoothing->SetTimeStep( 0.0625);
+	//smoothing->SetNumberOfIterations( smoothIteration);
+	//smoothing->SetConductanceParameter( conductance);
+	BinaryProbThresholdingFilterType::Pointer thresholdFilter = BinaryProbThresholdingFilterType::New();
+	thresholdFilter->SetInput(input);
+	thresholdFilter->SetLowerThreshold( 0);
+	thresholdFilter->SetUpperThreshold( intensityThreshold);                                                           
+	thresholdFilter->SetOutsideValue( 255);
+	thresholdFilter->SetInsideValue(0);
+	thresholdFilter->Update();
+	std::cout<<"Threshold Filter."<<std::endl;
+
+	typedef itk::BinaryBallStructuringElement< ProbImageType::PixelType, Dim> KType;
+	typedef itk::BinaryMorphologicalOpeningImageFilter< ProbImageType, ProbImageType, KType > OpenMorphFilterType;
+	OpenMorphFilterType::Pointer openFilter = OpenMorphFilterType::New();
+	KType ball;
+	KType::SizeType ballSize;
+	ballSize.Fill( open_radius);
+	ball.SetRadius(ballSize);
+	ball.CreateStructuringElement();
+	openFilter->SetInput( thresholdFilter->GetOutput());
+	openFilter->SetKernel( ball );
+	openFilter->SetForegroundValue( 255);
+	openFilter->Update();
+	std::cout<<"Open Filter done."<<std::endl;
 
 	GradientFilterType::Pointer  gradientMagnitude = GradientFilterType::New();
-	gradientMagnitude->SetInput( smoothing->GetOutput());
+	gradientMagnitude->SetInput( openFilter->GetOutput());
 	gradientMagnitude->SetSigma( sigma);
-	gradientMagnitude->Update();
-	writeImage("gradient.nrrd", gradientMagnitude->GetOutput());
+	//gradientMagnitude->Update();
+	//writeImage("gradient.nrrd", gradientMagnitude->GetOutput());
 
 	SigmoidFilterType::Pointer sigmoid = SigmoidFilterType::New();
 	sigmoid->SetAlpha( alfa);
@@ -1239,13 +1506,25 @@ SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentSomaUsingGradie
 	sigmoid->SetInput( gradientMagnitude->GetOutput());
 	sigmoid->Update();
 	writeImage("sigmoid.nrrd", sigmoid->GetOutput());
-	return NULL;
+
+	/// Advection Image
+
+	GradientImageType::Pointer advectionImage = CalculateAdvectionImage(sigmoid->GetOutput());
+	typedef GeodesicActiveContourFilterType::VectorImageType AdvectionImageType;
+	typedef itk::CastImageFilter<GradientImageType,AdvectionImageType> gvfCastFilterType;
+	gvfCastFilterType::Pointer castFilter = gvfCastFilterType::New();
+	castFilter->SetInput(advectionImage);
+	castFilter->Update();
 
 	std::cout<<"Active Contour: "<<curvatureScaling<<"\t"<<advectScaling<<"\t"<<rmsThres<<std::endl;
 	GeodesicActiveContourFilterType::Pointer GVF_snake = GeodesicActiveContourFilterType::New();
 	GVF_snake->SetInput(fastMarching->GetOutput());
+	GVF_snake->SetAutoGenerateSpeedAdvection(false);
 	GVF_snake->SetFeatureImage(sigmoid->GetOutput());
-	GVF_snake->SetPropagationScaling( 1.0);
+	GVF_snake->GenerateSpeedImage();
+	GVF_snake->SetAdvectionImage(castFilter->GetOutput());
+
+	GVF_snake->SetPropagationScaling( propScaling);
 	GVF_snake->SetCurvatureScaling( curvatureScaling);
 	GVF_snake->SetAdvectionScaling( advectScaling);
 	GVF_snake->SetMaximumRMSError( rmsThres);
@@ -1255,9 +1534,9 @@ SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentSomaUsingGradie
 	{
 		GVF_snake->Update();
 	}
-	catch(...)
+	catch(itk::ExceptionObject &err)
 	{
-		cout << "An exception occurred" << std::endl;
+		std::cout << err<< std::endl;
 		exit(1);
 	}
 
@@ -1272,74 +1551,87 @@ SomaExtractor::SegmentedImageType::Pointer SomaExtractor::SegmentSomaUsingGradie
 	thresholder->SetInsideValue(255);
 	thresholder->SetInput( GVF_snake->GetOutput());
 
-	/// Label image, recaculate centroids
+	typedef itk::BinaryBallStructuringElement<SegmentedImageType::PixelType,3> StructuringElementType;
+	StructuringElementType structuringElement;
+	structuringElement.SetRadius(radius);
+	structuringElement.CreateStructuringElement();
 
+	typedef itk::BinaryDilateImageFilter <SegmentedImageType, SegmentedImageType, StructuringElementType> BinaryDilateImageFilterType;
+	BinaryDilateImageFilterType::Pointer dilateFilter = BinaryDilateImageFilterType::New();
+	dilateFilter->SetInput(thresholder->GetOutput());
+	dilateFilter->SetKernel(structuringElement);
+	dilateFilter->SetDilateValue(255);
 	LabelFilterType::Pointer label = LabelFilterType::New();
-	label->SetInput(thresholder->GetOutput());
-
-	RelabelFilterType::Pointer relabel = RelabelFilterType::New();
-	relabel->SetInput( label->GetOutput());
-	relabel->SetMinimumObjectSize( minObjSize);  
-
-	relabel->Update();
-	SegmentedImageType::Pointer somas = relabel->GetOutput();
-
-	LabelGeometryImageFilterType::Pointer labelGeometryImageFilter = LabelGeometryImageFilterType::New();
-	labelGeometryImageFilter->SetInput( somas);
-	labelGeometryImageFilter->CalculatePixelIndicesOff();
-	labelGeometryImageFilter->CalculateOrientedBoundingBoxOff();
-	labelGeometryImageFilter->CalculateOrientedLabelRegionsOff();
-	labelGeometryImageFilter->CalculateOrientedIntensityRegionsOff();
-	labelGeometryImageFilter->Update();
-	LabelGeometryImageFilterType::LabelsType allLabels = labelGeometryImageFilter->GetLabels();
-	LabelGeometryImageFilterType::LabelsType::iterator allLabelsIt =  allLabels.begin();
-
-	somaCentroids.clear();
-	for( allLabelsIt++; allLabelsIt != allLabels.end(); allLabelsIt++ )
-	{
-		LabelGeometryImageFilterType::LabelPixelType labelValue = *allLabelsIt;
-		vtkSmartPointer<vtkVariantArray> row = vtkSmartPointer<vtkVariantArray>::New();
-		LabelGeometryImageFilterType::LabelPointType point = labelGeometryImageFilter->GetCentroid(labelValue);
-		itk::Index<3> index;
-		index[0] = point[0];
-		index[1] = point[1];
-		index[2] = point[2];
-		somaCentroids.push_back(index);
-	}
+	label->SetInput(dilateFilter->GetOutput());
+	label->Update();
+	SegmentedImageType::Pointer somas = label->GetOutput();
 	return somas;
+}
+
+
+SomaExtractor::GradientImageType::Pointer SomaExtractor::CalculateAdvectionImage(ProbImageType::Pointer edgePotentialMap)
+{
+	GradientImageType::Pointer gradientImage;
+	typedef itk::GradientRecursiveGaussianImageFilter< ProbImageType, GradientImageType >DerivativeFilterType;
+    DerivativeFilterType::Pointer derivative = DerivativeFilterType::New();
+    derivative->SetInput( edgePotentialMap);
+    derivative->SetSigma(sigma);
+	
+	GVFFilterType::Pointer gvfFilter = GVFFilterType::New();
+	gvfFilter->SetInput(derivative->GetOutput());
+	gvfFilter->SetIterationNum( numberOfIterations);
+	gvfFilter->SetNoiseLevel( noiseLevel);
+	gvfFilter->Update();
+	gradientImage = gvfFilter->GetOutput();
+
+	/* copy negative gradient into the advection image. */
+	itk::ImageRegionIterator< GradientImageType> dit( gradientImage, gradientImage->GetLargestPossibleRegion());
+
+	for ( dit.GoToBegin(); !dit.IsAtEnd(); ++dit)
+	{
+		GradientImageType::PixelType v = dit.Get();
+		for ( unsigned int j = 0; j < Dim; j++ )
+		{
+			v[j] *= -1.0;
+		}
+		dit.Set(v);
+	}
+
+	GradientImageType::RegionType region = gradientImage->GetLargestPossibleRegion();
+	GradientImageType::SizeType imageSize = region.GetSize();
+
+	ProbImageType::Pointer ximage = ProbImageType::New();
+	ximage->SetRegions(region);
+	ximage->Allocate();
+	ximage->FillBuffer(0);
+
+	for ( unsigned int z = 0; z < imageSize[2]; z++)
+	{
+		for(unsigned int j = 0; j < imageSize[1]; j++)
+		{
+			for(unsigned int i = 0; i < imageSize[0]; i++)
+			{
+				GradientImageType::IndexType index;
+				index[0] = i;
+				index[1] = j;
+				index[2] = z;
+
+				GradientImageType::PixelType pixel = gradientImage->GetPixel(index);
+				ProbImageType::IndexType index2;
+				index2[0] = i;
+				index2[1] = j;
+				index2[2] = z;
+				ximage->SetPixel(index2, pixel[0]);
+			 }
+		}
+	}
+	writeImage("GVFX.nrrd", ximage);
+	return gradientImage;
 }
 
 //// write the x component of gvf
 //GradientImageType::Pointer gradientImage = gvfFilter->GetOutput();
-//GradientImageType::RegionType region = gradientImage->GetLargestPossibleRegion();
-//GradientImageType::SizeType imageSize = region.GetSize();
-//
-//ProbImageType::Pointer ximage = ProbImageType::New();
-//ximage->SetRegions(region);
-//ximage->Allocate();
-//ximage->FillBuffer(0);
 
-//for ( unsigned int z = 0; z < imageSize[2]; z++)
-//{
-//	for(unsigned int j = 0; j < imageSize[1]; j++)
-//	{
-//		for(unsigned int i = 0; i < imageSize[0]; i++)
-//		{
-//			GradientImageType::IndexType index;
-//			index[0] = i;
-//			index[1] = j;
-//			index[2] = z;
-
-//			GradientImageType::PixelType pixel = gradientImage->GetPixel(index);
-//			ProbImageType::IndexType index2;
-//			index2[0] = i;
-//			index2[1] = j;
-//			index2[2] = z;
-//			ximage->SetPixel(index2, pixel[0]);
-//		 }
-//	}
-//}
-//writeImage("GVFX.nrrd", ximage);
 
 /// For soma surface feature
 void SomaExtractor::SomaBoundaryScan(SegmentedImageType::Pointer labelImage, std::map< TLPixel, int> &LtoIMap, std::vector< int> &boundaryPixSize)
